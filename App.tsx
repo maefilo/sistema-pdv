@@ -16,7 +16,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { SalesPage } from './pages/SalesPage';
 import { DailyBalancePage } from './pages/DailyBalancePage';
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://novo-projt-main.onrender.com/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
