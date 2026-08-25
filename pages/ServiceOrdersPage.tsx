@@ -33,6 +33,10 @@ export const ServiceOrdersPage: React.FC = () => {
 
   const printAreaRef = useRef<HTMLDivElement>(null);
 
+  const getCurrentClient = (cpf: string) => {
+    return clients.find(c => c.cpf && cpf && c.cpf === cpf);
+  };
+
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       if (order.type !== 'service-order') return false;
@@ -350,19 +354,21 @@ export const ServiceOrdersPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredOrders.map((order) => (
+                {filteredOrders.map((order) => {
+                  const currentClient = getCurrentClient(order.clientCpf);
+                  return (
                   <tr key={order.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {order.id}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {order.clientName}
+                      {currentClient?.name || order.clientName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {sections.find(s => s.id === order.sectionId)?.name || <span className="text-gray-400 italic text-xs">Sem Seção</span>}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {order.clientStreet}, {order.clientNumber} - {order.clientCity}
+                      {currentClient?.street || order.clientStreet}, {currentClient?.number || order.clientNumber} - {currentClient?.city || order.clientCity}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatCurrency(order.total)}
@@ -410,7 +416,8 @@ export const ServiceOrdersPage: React.FC = () => {
                       />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -425,13 +432,16 @@ export const ServiceOrdersPage: React.FC = () => {
           size="lg"
           hideFooter={true}
         >
+          {(() => {
+            const currentClient = getCurrentClient(selectedOrder.clientCpf);
+            return (
           <div className="space-y-4 text-gray-700">
-            <p><strong>Cliente:</strong> {selectedOrder.clientName}</p>
-            <p><strong>Contato:</strong> {selectedOrder.clientContact}</p>
+            <p><strong>Cliente:</strong> {currentClient?.name || selectedOrder.clientName}</p>
+            <p><strong>Contato:</strong> {currentClient?.contact || selectedOrder.clientContact}</p>
             <p><strong>CPF:</strong> {selectedOrder.clientCpf}</p>
             <div className="address-info">
-                <p><strong>Endereço:</strong> {selectedOrder.clientStreet}, {selectedOrder.clientNumber} - {selectedOrder.clientNeighborhood}</p>
-                <p>{selectedOrder.clientCity}/{selectedOrder.clientState} - CEP: {selectedOrder.clientZipCode}</p>
+                <p><strong>Endereço:</strong> {currentClient?.street || selectedOrder.clientStreet}, {currentClient?.number || selectedOrder.clientNumber} - {currentClient?.neighborhood || selectedOrder.clientNeighborhood}</p>
+                <p>{currentClient?.city || selectedOrder.clientCity}/{currentClient?.state || selectedOrder.clientState} - CEP: {currentClient?.zipCode || selectedOrder.clientZipCode}</p>
             </div>
             <p><strong>Seção / Categoria:</strong> {sections.find(s => s.id === selectedOrder.sectionId)?.name || 'Nenhuma'}</p>
             <p><strong>Tipo:</strong> Ordem de Serviço</p>
@@ -515,6 +525,8 @@ export const ServiceOrdersPage: React.FC = () => {
                 </div>
             )}
           </div>
+          );
+          })()}
         </Modal>
       )}
 

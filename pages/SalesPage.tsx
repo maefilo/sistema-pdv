@@ -11,7 +11,7 @@ import { Modal } from '../components/Modal';
 import * as XLSX from 'xlsx';
 
 export const SalesPage: React.FC = () => {
-  const { orders, updateOrder, deleteOrder, products, updateProduct, checkPermission } = useAuth();
+  const { orders, updateOrder, deleteOrder, products, updateProduct, clients, checkPermission } = useAuth();
   
   // Use order editing permission for cancellation/status change
   const canEditOrderStatus = checkPermission('canEditOrderStatus');
@@ -20,6 +20,10 @@ export const SalesPage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<OrderStatus | 'all'>('all');
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+
+  const getCurrentClient = (cpf: string) => {
+    return clients.find(c => c.cpf && cpf && c.cpf === cpf);
+  };
 
   const filteredSales = useMemo(() => {
     const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(Boolean);
@@ -103,18 +107,20 @@ export const SalesPage: React.FC = () => {
       return;
     }
 
-    const dataToExport = filteredSales.map(order => ({
+    const dataToExport = filteredSales.map(order => {
+      const currentClient = getCurrentClient(order.clientCpf);
+      return {
       'ID Venda': order.id,
       'Data': new Date(order.createdAt).toLocaleString('pt-BR'),
-      'Cliente': order.clientName,
+      'Cliente': currentClient?.name || order.clientName,
       'CPF Cliente': order.clientCpf,
-      'Contato Cliente': order.clientContact,
-      'CEP': order.clientZipCode,
-      'Rua': order.clientStreet,
-      'Número': order.clientNumber,
-      'Bairro': order.clientNeighborhood,
-      'Cidade': order.clientCity,
-      'Estado': order.clientState,
+      'Contato Cliente': currentClient?.contact || order.clientContact,
+      'CEP': currentClient?.zipCode || order.clientZipCode,
+      'Rua': currentClient?.street || order.clientStreet,
+      'Número': currentClient?.number || order.clientNumber,
+      'Bairro': currentClient?.neighborhood || order.clientNeighborhood,
+      'Cidade': currentClient?.city || order.clientCity,
+      'Estado': currentClient?.state || order.clientState,
       'Produtos': order.items.map(item => `${item.name} (${item.quantity})`).join(', '),
       'Total': order.total,
       'Pagamento': order.payments 
@@ -122,7 +128,8 @@ export const SalesPage: React.FC = () => {
         : order.paymentMethod || 'N/A',
       'Vendedor': order.sellerName || 'N/A',
       'Status': order.status
-    }));
+    };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
@@ -218,13 +225,15 @@ export const SalesPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSales.map((sale) => (
+                {filteredSales.map((sale) => {
+                  const currentClient = getCurrentClient(sale.clientCpf);
+                  return (
                   <tr key={sale.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {sale.id}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {sale.clientName}
+                      {currentClient?.name || sale.clientName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatCurrency(sale.total)}
@@ -277,7 +286,8 @@ export const SalesPage: React.FC = () => {
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -292,9 +302,12 @@ export const SalesPage: React.FC = () => {
           size="lg"
           hideFooter={true}
         >
+          {(() => {
+            const currentClient = getCurrentClient(selectedOrder.clientCpf);
+            return (
           <div className="space-y-4 text-gray-700">
-            <p><strong>Cliente:</strong> {selectedOrder.clientName}</p>
-            <p><strong>Contato:</strong> {selectedOrder.clientContact}</p>
+            <p><strong>Cliente:</strong> {currentClient?.name || selectedOrder.clientName}</p>
+            <p><strong>Contato:</strong> {currentClient?.contact || selectedOrder.clientContact}</p>
             <p><strong>CPF:</strong> {selectedOrder.clientCpf}</p>
             <p><strong>Status:</strong> <span className={`px-2 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${ORDER_STATUS_COLORS[selectedOrder.status]}`}>{selectedOrder.status}</span></p>
             <p><strong>Vendedor:</strong> {selectedOrder.sellerName || 'N/A'}</p>
@@ -361,6 +374,8 @@ export const SalesPage: React.FC = () => {
                 </Button>
             </div>
           </div>
+          );
+          })()}
         </Modal>
       )}
     </div>
