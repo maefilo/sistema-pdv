@@ -6,9 +6,11 @@ import { formatCurrency } from '../utils/currencyFormatter';
 import { formatDateTime } from '../utils/dateFormatter';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
+import { Input } from '../components/Input';
 import { summarizeReport } from '../services/geminiService';
-import { Loader2, TrendingUp, Package, ShoppingBag, BarChart as BarChartIcon, Brain, CheckCircle, Clock, DollarSign, ScrollText, Factory } from 'lucide-react';
+import { Loader2, TrendingUp, Package, ShoppingBag, BarChart as BarChartIcon, Brain, CheckCircle, Clock, DollarSign, ScrollText, Factory, Download, Filter } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import * as XLSX from 'xlsx';
 
 export const ReportsPage: React.FC = () => {
   const { products, orders, rawMaterials, checkPermission, companyInfo } = useAuth(); // Use checkPermission
@@ -17,49 +19,61 @@ export const ReportsPage: React.FC = () => {
   const [reportSummary, setReportSummary] = useState<string | null>(null);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // --- Filtered Orders by Date Range ---
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      const orderDate = new Date(order.createdAt);
+      if (startDate && orderDate < new Date(startDate + 'T00:00:00')) return false;
+      if (endDate && orderDate > new Date(endDate + 'T23:59:59')) return false;
+      return true;
+    });
+  }, [orders, startDate, endDate]);
 
   // --- General Metrics ---
   const totalDirectSalesValue = useMemo(() => {
-    return orders
+    return filteredOrders
       .filter(order => order.type === 'sale' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED))
       .reduce((sum, order) => sum + (Number(order.total) || 0), 0);
-  }, [orders]);
+  }, [filteredOrders]);
 
   const totalServiceOrdersValue = useMemo(() => {
-    return orders
+    return filteredOrders
       .filter(order => order.type === 'service-order' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED))
       .reduce((sum, order) => sum + (Number(order.total) || 0), 0);
-  }, [orders]);
+  }, [filteredOrders]);
 
   const totalBudgetsCount = useMemo(() => {
-    return orders.filter(order => order.type === 'budget').length;
-  }, [orders]);
+    return filteredOrders.filter(order => order.type === 'budget').length;
+  }, [filteredOrders]);
 
   const completedDirectSalesCount = useMemo(() => {
-    return orders.filter(order => order.type === 'sale' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED)).length;
-  }, [orders]);
+    return filteredOrders.filter(order => order.type === 'sale' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED)).length;
+  }, [filteredOrders]);
 
   const completedServiceOrdersCount = useMemo(() => {
-    return orders.filter(order => order.type === 'service-order' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED)).length;
-  }, [orders]);
+    return filteredOrders.filter(order => order.type === 'service-order' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED)).length;
+  }, [filteredOrders]);
 
   const pendingDirectSalesCount = useMemo(() => {
-    return orders.filter(order => order.type === 'sale' && (order.status === OrderStatus.PENDING || order.status === OrderStatus.IN_PROGRESS)).length;
-  }, [orders]);
+    return filteredOrders.filter(order => order.type === 'sale' && (order.status === OrderStatus.PENDING || order.status === OrderStatus.IN_PROGRESS)).length;
+  }, [filteredOrders]);
 
   const pendingServiceOrdersCount = useMemo(() => {
-    return orders.filter(order => order.type === 'service-order' && (order.status === OrderStatus.PENDING || order.status === OrderStatus.IN_PROGRESS)).length;
-  }, [orders]);
+    return filteredOrders.filter(order => order.type === 'service-order' && (order.status === OrderStatus.PENDING || order.status === OrderStatus.IN_PROGRESS)).length;
+  }, [filteredOrders]);
 
   // New: Calculate total production costs for completed service orders
   const totalProductionCosts = useMemo(() => {
-    return orders
+    return filteredOrders
       .filter(order => order.type === 'service-order' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED) && order.productionDetails)
       .reduce((orderSum, order) => {
         const itemCosts = order.productionDetails ? order.productionDetails.reduce((itemSum, item) => itemSum + (item.quantityUsed * item.costPerUnit), 0) : 0;
         return orderSum + itemCosts;
       }, 0);
-  }, [orders]);
+  }, [filteredOrders]);
 
 
   // Calculate total value of finished products in stock (based on cost price)
@@ -74,7 +88,7 @@ export const ReportsPage: React.FC = () => {
   // --- Sales by Month Chart Data (Direct Sales) ---
   const directSalesByMonthData = useMemo(() => {
     const monthlySales: { [key: string]: number } = {}; // Format: YYYY-MM
-    orders
+    filteredOrders
       .filter(order => order.type === 'sale' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED))
       .forEach(order => {
         const date = new Date(order.createdAt);
@@ -91,12 +105,12 @@ export const ReportsPage: React.FC = () => {
           sales: monthlySales[key],
         };
       });
-  }, [orders]);
+  }, [filteredOrders]);
 
   // --- Service Orders by Month Chart Data ---
   const serviceOrdersByMonthData = useMemo(() => {
     const monthlyOrders: { [key: string]: number } = {}; // Format: YYYY-MM
-    orders
+    filteredOrders
       .filter(order => order.type === 'service-order' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED))
       .forEach(order => {
         const date = new Date(order.createdAt);
@@ -113,12 +127,12 @@ export const ReportsPage: React.FC = () => {
           total: monthlyOrders[key],
         };
       });
-  }, [orders]);
+  }, [filteredOrders]);
 
   // --- Top Products Sales Chart Data (Combined) ---
   const topProductsData = useMemo(() => {
     const productSales: { [key: string]: { name: string; quantity: number; revenue: number } } = {};
-    orders
+    filteredOrders
       .filter(order => (order.type === 'sale' || order.type === 'service-order') && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED))
       .forEach(order => {
         order.items.forEach(item => {
@@ -133,7 +147,7 @@ export const ReportsPage: React.FC = () => {
     return Object.values(productSales)
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5); // Top 5 products
-  }, [orders]);
+  }, [filteredOrders]);
 
 
 
@@ -144,7 +158,7 @@ export const ReportsPage: React.FC = () => {
     }
     setIsLoadingSummary(true);
 
-    const productionCostsSummary = orders
+    const productionCostsSummary = filteredOrders
       .filter(order => order.type === 'service-order' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED) && order.productionDetails)
       .map(order => {
         const costs = order.productionDetails ? order.productionDetails.reduce((itemSum, item) => itemSum + (item.quantityUsed * item.costPerUnit), 0) : 0;
@@ -197,18 +211,136 @@ export const ReportsPage: React.FC = () => {
     }
   };
 
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // 1. Resumo Geral
+    const resumoData = [
+      { 'Métrica': 'Valor Total Vendas Diretas', 'Valor': totalDirectSalesValue },
+      { 'Métrica': 'Valor Total Ordens de Serviço', 'Valor': totalServiceOrdersValue },
+      { 'Métrica': 'Vendas Diretas Concluídas', 'Valor': completedDirectSalesCount },
+      { 'Métrica': 'O.S. Concluídas', 'Valor': completedServiceOrdersCount },
+      { 'Métrica': 'Vendas Diretas Pendentes', 'Valor': pendingDirectSalesCount },
+      { 'Métrica': 'O.S. Pendentes', 'Valor': pendingServiceOrdersCount },
+      { 'Métrica': 'Total de Orçamentos', 'Valor': totalBudgetsCount },
+      { 'Métrica': 'Custo Total de Produção (O.S.)', 'Valor': totalProductionCosts },
+      { 'Métrica': 'Produtos Acabados em Estoque (Custo)', 'Valor': totalFinishedProductsCostValue },
+      { 'Métrica': 'Valor Matéria Prima em Estoque', 'Valor': totalRawMaterialValue },
+    ];
+    const wsResumo = XLSX.utils.json_to_sheet(resumoData);
+    wsResumo['!cols'] = [{ wch: 40 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo Geral');
+
+    // 2. Vendas Diretas por Mês
+    if (directSalesByMonthData.length > 0) {
+      const wsVendas = XLSX.utils.json_to_sheet(directSalesByMonthData.map(d => ({
+        'Mês': d.month,
+        'Valor': d.sales
+      })));
+      wsVendas['!cols'] = [{ wch: 20 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsVendas, 'Vendas por Mês');
+    }
+
+    // 3. Ordens de Serviço por Mês
+    if (serviceOrdersByMonthData.length > 0) {
+      const wsOS = XLSX.utils.json_to_sheet(serviceOrdersByMonthData.map(d => ({
+        'Mês': d.month,
+        'Valor': d.total
+      })));
+      wsOS['!cols'] = [{ wch: 20 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsOS, 'OS por Mês');
+    }
+
+    // 4. Top 5 Produtos
+    if (topProductsData.length > 0) {
+      const wsProdutos = XLSX.utils.json_to_sheet(topProductsData.map((d, i) => ({
+        'Ranking': i + 1,
+        'Produto': d.name,
+        'Quantidade': d.quantity,
+        'Faturamento': d.revenue
+      })));
+      wsProdutos['!cols'] = [{ wch: 10 }, { wch: 30 }, { wch: 15 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsProdutos, 'Top Produtos');
+    }
+
+    // 5. Detalhamento das Ordens Filtradas
+    if (filteredOrders.length > 0) {
+      const wsDetalhes = XLSX.utils.json_to_sheet(filteredOrders.map(order => ({
+        'ID': order.id,
+        'Tipo': order.type === 'sale' ? 'Venda' : order.type === 'service-order' ? 'Ordem de Serviço' : 'Orçamento',
+        'Data': new Date(order.createdAt).toLocaleString('pt-BR'),
+        'Cliente': order.clientName,
+        'Total': order.total,
+        'Status': order.status,
+        'Itens': order.items.map(item => `${item.name} (${item.quantity})`).join(', ')
+      })));
+      wsDetalhes['!cols'] = [{ wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 50 }];
+      XLSX.utils.book_append_sheet(wb, wsDetalhes, 'Detalhamento Ordens');
+    }
+
+    const dateFilter = startDate && endDate ? `${startDate}_ate_${endDate}` : 'completo';
+    XLSX.writeFile(wb, `relatorio_atividade_${dateFilter}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   return (
     <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Relatórios de Atividade</h2>
-        <Button
-          onClick={handleGenerateSummary}
-          isLoading={isLoadingSummary}
-          icon={<Brain className="h-5 w-5" />}
-          disabled={!canGenerateAISummary} // Disabled if no permission
-        >
-          {isLoadingSummary ? 'Gerando Resumo...' : 'Gerar Resumo com IA'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            onClick={handleExportExcel}
+            variant="outline"
+            icon={<Download className="h-5 w-5" />}
+          >
+            Exportar Excel
+          </Button>
+          <Button
+            onClick={handleGenerateSummary}
+            isLoading={isLoadingSummary}
+            icon={<Brain className="h-5 w-5" />}
+            disabled={!canGenerateAISummary}
+          >
+            {isLoadingSummary ? 'Gerando Resumo...' : 'Gerar Resumo com IA'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Filtro de Período */}
+      <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+        <div className="flex flex-col md:flex-row items-end gap-4">
+          <div className="flex items-center gap-2 text-gray-600">
+            <Filter className="h-5 w-5" />
+            <span className="font-medium">Filtrar por Período:</span>
+          </div>
+          <Input
+            id="startDate"
+            label="Data Início"
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            containerClassName="mb-0 flex-1"
+          />
+          <Input
+            id="endDate"
+            label="Data Fim"
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            containerClassName="mb-0 flex-1"
+          />
+          <Button
+            variant="outline"
+            onClick={() => { setStartDate(''); setEndDate(''); }}
+            className="mb-4"
+          >
+            Limpar Filtro
+          </Button>
+        </div>
+        {(startDate || endDate) && (
+          <p className="text-sm text-gray-500 mt-2">
+            Exibindo dados de {startDate ? new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'início'} até {endDate ? new Date(endDate + 'T23:59:59').toLocaleDateString('pt-BR') : 'atual'}
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
