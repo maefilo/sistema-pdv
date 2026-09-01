@@ -4,7 +4,7 @@ import { formatCurrency } from '../utils/currencyFormatter';
 import { ReportCard } from '../components/ReportCard';
 import { TrendingUp, Package, ShoppingBag, Truck, DollarSign, AlertTriangle } from 'lucide-react';
 import { OrderStatus, Product, RawMaterial } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Modal } from '../components/Modal';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
@@ -98,16 +98,37 @@ export const DashboardPage: React.FC = () => {
       });
   }, [orders]);
 
-  // Data for order status distribution
-  const orderStatusData = useMemo(() => {
-    const statusCounts: { [key in OrderStatus]?: number } = {};
-    orders.forEach(order => {
-      statusCounts[order.status] = (statusCounts[order.status] || 0) + 1;
-    });
-    return Object.entries(statusCounts).map(([status, count]) => ({
-      name: status,
-      value: count,
+  // Data for sales by month (12 months)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const salesByMonthData = useMemo(() => {
+    const monthlySales: { [key: string]: number } = {};
+    const currentYear = selectedYear;
+    for (let m = 1; m <= 12; m++) {
+      const monthKey = `${currentYear}-${m.toString().padStart(2, '0')}`;
+      monthlySales[monthKey] = 0;
+    }
+    orders
+      .filter(order => order.type === 'sale' && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.DELIVERED))
+      .forEach(order => {
+        const date = new Date(order.createdAt);
+        const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (monthlySales.hasOwnProperty(monthKey)) {
+          monthlySales[monthKey] += Number(order.total) || 0;
+        }
+      });
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return Object.keys(monthlySales).sort().map((key, i) => ({
+      month: months[i],
+      sales: monthlySales[key],
     }));
+  }, [orders, selectedYear]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    years.add(new Date().getFullYear());
+    orders.forEach(o => years.add(new Date(o.createdAt).getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
   }, [orders]);
 
   // Low stock monitoring
@@ -120,8 +141,6 @@ export const DashboardPage: React.FC = () => {
   }, [rawMaterials]);
 
   const hasLowStock = lowStockProducts.length > 0 || lowStockRawMaterials.length > 0;
-
-  const PIE_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088FE', '#00C49F'];
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -227,26 +246,29 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Distribuição de Status de Pedidos</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Vendas por Mês</h3>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {availableYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
           <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={orderStatusData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-                nameKey="name"
-              >
-                {orderStatusData.map((_entry, index) => (
-                  <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value: number) => value.toString()} />
-              <Legend />
-            </PieChart>
+            <BarChart
+              data={salesByMonthData}
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+              <XAxis dataKey="month" stroke="#6b7280" />
+              <YAxis stroke="#6b7280" tickFormatter={(value) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Bar dataKey="sales" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
